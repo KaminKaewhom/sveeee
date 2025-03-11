@@ -356,60 +356,82 @@ app.post("/Customers", (req, res) => {
 });
 
 app.post("/report", (req, res) => {
-  const check = req.body.check; // Access 'check' property from request body
+  const { check } = req.body; // รับค่าจาก request body
 
+  // SQL ลบข้อมูลเก่าออกก่อน
+  const deleteOldReportsSQL = `DELETE FROM daily_reports;`;
+
+  // SQL รีเซ็ตค่า AUTO_INCREMENT ให้เริ่มจาก 1
+  const resetAutoIncrementSQL = `ALTER TABLE daily_reports AUTO_INCREMENT = 1;`;
+
+  // SQL สำหรับสร้างรายงานใหม่
   const generateReportSQL = `
   INSERT INTO daily_reports (order_id, order_date, customer_name, product_name, category_name, quantity, price, total_amount)
   SELECT 
       o.order_id, 
-      o.order_date, 
+      NOW() AS order_date,  -- ใช้เวลาที่บันทึกเป็นวันที่ของรายงาน
       c.customer_name, 
-      p.product_name AS product_name,  
+      p.product_name,  
       cat.category_name,  
       oi.quantity, 
-      p.product_price AS price,
+      p.product_price, 
       (oi.quantity * p.product_price) AS total_amount
   FROM Orders o
   JOIN Customers c ON o.customer_id = c.customer_id
   JOIN Order_Items oi ON o.order_id = oi.order_id
   JOIN Products p ON oi.product_id = p.product_id
   JOIN Categories cat ON p.category_id = cat.category_id
-  WHERE o.order_date = CURDATE();  -- ฟิลเตอร์ให้เป็นรายวัน
+  ORDER BY o.order_id ASC;  -- เรียงลำดับตาม order_id จากน้อยไปมาก
   `;
 
-  // Check for 'save' operation
   if (check === "save") {
-    pool.query(generateReportSQL, (err, results) => {
+    pool.query(deleteOldReportsSQL, (err) => {
       if (err) {
-        console.error("Error generating daily report:", err);
+        console.error("Error deleting old reports:", err);
         return res
           .status(500)
-          .json({ error: "เกิดข้อผิดพลาดในการสร้างรายงาน" });
-      } else {
-        console.log("Daily report generated successfully", results);
+          .json({ error: "เกิดข้อผิดพลาดในการลบข้อมูลรายงานเก่า" });
+      }
 
-        const selectReportSQL = `SELECT * FROM daily_reports`;
+      pool.query(resetAutoIncrementSQL, (err) => {
+        if (err) {
+          console.error("Error resetting AUTO_INCREMENT:", err);
+          return res
+            .status(500)
+            .json({ error: "เกิดข้อผิดพลาดในการรีเซ็ตค่า report_id" });
+        }
 
-        pool.query(selectReportSQL, (err, reportResults) => {
+        pool.query(generateReportSQL, (err, results) => {
           if (err) {
-            console.error("Error fetching daily report data:", err);
+            console.error("Error generating daily report:", err);
             return res
               .status(500)
-              .json({ error: "เกิดข้อผิดพลาดในการดึงข้อมูลรายงาน" });
-          }
+              .json({ error: "เกิดข้อผิดพลาดในการสร้างรายงาน" });
+          } else {
+            console.log("Daily report generated successfully", results);
 
-          console.log("Fetched daily reports:", reportResults);
-          return res.status(200).json({
-            message: "รายงานถูกสร้างเรียบร้อยแล้ว",
-            data: reportResults,
-          });
+            const selectReportSQL = `SELECT * FROM daily_reports ORDER BY report_id ASC`; // เรียงข้อมูลตอนดูรายงาน
+
+            pool.query(selectReportSQL, (err, reportResults) => {
+              if (err) {
+                console.error("Error fetching daily report data:", err);
+                return res
+                  .status(500)
+                  .json({ error: "เกิดข้อผิดพลาดในการดึงข้อมูลรายงาน" });
+              }
+
+              console.log("Fetched daily reports:", reportResults);
+              return res.status(200).json({
+                message: "รายงานถูกสร้างใหม่เรียบร้อยแล้ว",
+                data: reportResults,
+              });
+            });
+          }
         });
-      }
+      });
     });
-  }
-  // Check for 'view' operation
-  else if (check === "view") {
-    const view = `SELECT * FROM daily_reports`;
+  } else if (check === "view") {
+    const view = `SELECT * FROM daily_reports ORDER BY report_id ASC`; // เรียงข้อมูลตอนดูรายงาน
 
     pool.query(view, (err, report) => {
       if (err) {
@@ -423,7 +445,6 @@ app.post("/report", (req, res) => {
         .json({ message: "รายงานถูกดึงข้อมูลเรียบร้อยแล้ว", data: report });
     });
   } else {
-    // In case the `check` value is neither "save" nor "view"
     res.status(400).json({ message: "ไม่พบคำสั่งที่ถูกต้อง" });
   }
 });
