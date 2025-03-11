@@ -369,7 +369,7 @@ app.post("/report", (req, res) => {
   INSERT INTO daily_reports (order_id, order_date, customer_name, product_name, category_name, quantity, price, total_amount)
   SELECT 
       o.order_id, 
-      NOW() AS order_date,  -- ใช้เวลาที่บันทึกเป็นวันที่ของรายงาน
+       o.order_date, 
       c.customer_name, 
       p.product_name,  
       cat.category_name,  
